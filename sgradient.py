@@ -3,6 +3,8 @@ import numpy as np
 import pycutest as pqt
 import matplotlib.pyplot as plt
 
+import params 
+
 #################################
 '''
         TO-DOS:
@@ -23,16 +25,16 @@ import matplotlib.pyplot as plt
 def armijo1(fx, d, xk):
     fx.obj(xk)
     alpha = 1
-    beta = 0.8 # perguntar para o Silva Silva qual seria um bom valor
+    beta = params.BETA_GD
     while (fx.obj(xk+alpha *d) >= fx.obj(xk)): # finds the smallest 
         alpha *= beta #
     return alpha 
 
 def armijo2(fx, d, xk):
     alpha = 1
-    beta, eta = 0.5 , 0.5 # perguntar para o Silva Silva qual seria um bom valor
+    beta, eta = params.BETA_BFGS , params.ETA_BFGS 
 
-    term = eta *alpha * (fx.grad(xk)).T # VERIFICAR SE È .T mesmo
+    term = eta *alpha * (fx.grad(xk)).T # VERIFICAR SE É .T mesmo
 
     while (fx.obj(xk+alpha *d) >= fx.obj(xk) +term ): # finds the smallest 
         alpha *= beta # 
@@ -40,39 +42,82 @@ def armijo2(fx, d, xk):
     return alpha 
 
 def steepest_descent(x0,fx):
+    # x0 is our initial point
+    # fx is an pycutest object that contains the objective function fx.obj() as a pyhton method
     xk = x0
     k = 0
 
-    while (fx.grad(xk) != 0 or k>100): # stop condition
+    MAX_ITER = params.MAX_ITERATIONS
+    EPSILON = params.EPSILON
+    status = False
+
+    while (k < MAX_ITER): # stop condition
+        if (fx.grad(xk) >  EPSILON): # Optimality condition
+            status = True
+            break
         d = -fx.grad(xk) # steepest descent direction
 
-        alpha =  armijo(fx, d, xk)
-        xk = x0+alpha* d
+        alpha =  armijo1(fx, d, xk)
+        xk = xk+alpha* d
         k +=1
-    return xk
+    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k}
 
-def bfgs_hessian(Bk_1, fx, xk_1, alpha, d):
+def bfgs_hessian(Hk_1, fx, xk_1, alpha, d):
     xk = xk_1 +alpha * d
     s = xk - xk_1
     y = fx.grad(xk) - fx.grad(xk_1)
 
-    rho1 = 1/(y.T @ s)
-    rho2 = 1/(s.T @ Bk_1 @ s)
-    Bk = Bk_1 +(y @y.T)*rho1 + (Bk_1 @ s @ s.T @ Bk_1) * rho2
+    I = np.eye(Hk_1.shape[0])
+    rho = 1/(y.T @ s)
+    z = np.dot(s, y.T)
+    Hk = (I - rho * z) @ Hk_1 (I - rho * z.T) + rho * np.dot(s, s.T)
 
-    return Bk
+    return Hk
 
 
-def BFGS(x0, fx, gradf):
-    k = 0 ## PERGUNTAR PARA O PROFESSOR E AJUSTAR!!
-    Bk =  fx.hess(xk)  # Initial aproximation to the hessian of fx
+def BFGS(x0, x1, fx):
+    k = 1
+    s = x1 - x0
+    y = fx.grad(x1)-fx.grad(x0)
+
+    Hk =  np.eye(len(x0))  # Initial aproximation to the hessian of fx
+    xk = x1
+
+    MAX_ITER = params.MAX_ITERATIONS
+    EPSILON = params.EPSILON
+    status = False
+
+    while (k < MAX_ITER): # stop condition
+        if (fx.grad(xk) >  EPSILON): # Optimality condition
+            status = True
+            break
+        d = np.dot(Hk, -fx.grad(xk))
+
+        alpha = armijo2(fx, d, xk)
+        Hk = bfgs_hessian(Hk, fx, xk, alpha, d)
+        xk = xk + alpha * d
+
+        k+=1
+
+    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k}
+
+def spectral_gradient(x0, x1, fx,  step = None):
+    k=1
     xk = x0
+    gradf = fx.grad(xk)
 
-    while (fx.grad(xk) != 0): # stop condition
-        d = np.linalg.solve(Bk, -fx.grad(xk))
+    s = x1 - x0
+    y = fx.grad(x1) - fx.grad(x0)
 
-        alpha = armijo2(fx, d, xk, gradf)
+    sigma = (s.T @ y)/ (s.T @ s)
+    d = -(1/sigma) * fx.grad(fx)
 
-        Bk = bfgs_hessian(fx, xk, alpha, d)
+    alpha = 1
+    if step == 'armijo':
+
+    elif step == 'mod_armijo':
+
+    else:
 
     return xk
+
