@@ -30,9 +30,9 @@ def armijo1(fx, d, xk):
         alpha *= beta #
     return alpha 
 
-def armijo2(fx, d, xk):
+def armijo2(fx, d, xk, beta, eta):
     alpha = 1
-    beta, eta = params.BETA_BFGS , params.ETA_BFGS 
+    # beta, eta = params.BETA_BFGS , params.ETA_BFGS 
 
     term = eta *alpha * (fx.grad(xk)).T # VERIFICAR SE É .T mesmo
 
@@ -51,8 +51,8 @@ def steepest_descent(x0,fx):
     EPSILON = params.EPSILON
     status = False
 
-    while (k < MAX_ITER): # stop condition
-        if (fx.grad(xk) >  EPSILON): # Optimality condition
+    while (k < MAX_ITER): # stopping criterion
+        if (np.linalg.norm(fx.grad(xk) >  EPSILON)): # Optimality condition
             status = True
             break
         d = -fx.grad(xk) # steepest descent direction
@@ -75,20 +75,17 @@ def bfgs_hessian(Hk_1, fx, xk_1, alpha, d):
     return Hk
 
 
-def BFGS(x0, x1, fx):
-    k = 1
-    s = x1 - x0
-    y = fx.grad(x1)-fx.grad(x0)
-
+def BFGS(x0, fx):
+    k = 0
     Hk =  np.eye(len(x0))  # Initial aproximation to the hessian of fx
-    xk = x1
+    xk = x0
 
     MAX_ITER = params.MAX_ITERATIONS
     EPSILON = params.EPSILON
     status = False
 
-    while (k < MAX_ITER): # stop condition
-        if (fx.grad(xk) >  EPSILON): # Optimality condition
+    while (k < MAX_ITER): # stopping criterion
+        if (np.linalg.norm(fx.grad(xk) >  EPSILON)): # Optimality condition
             status = True
             break
         d = np.dot(Hk, -fx.grad(xk))
@@ -101,23 +98,65 @@ def BFGS(x0, x1, fx):
 
     return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k}
 
-def spectral_gradient(x0, x1, fx,  step = None):
-    k=1
-    xk = x0
-    gradf = fx.grad(xk)
-
-    s = x1 - x0
-    y = fx.grad(x1) - fx.grad(x0)
+def sgradient_direction(xk_1, xk, fx):
+    s = xk - xk_1
+    y = fx.grad(xk) - fx.grad(xk_1)
 
     sigma = (s.T @ y)/ (s.T @ s)
-    d = -(1/sigma) * fx.grad(fx)
+    return sigma
 
+def spectral_gradient(x0, x1, fx,  step = None):
+    MAX_ITER = params.MAX_ITERATIONS
+    EPSILON = params.EPSILON
+
+    k=1
+    xk_1 = x0
+    xk = x1
     alpha = 1
+
     if step == 'armijo':
+        beta, eta  = params.BETA_SG, params.ETA_SG
+
+        while (k < MAX_ITER): # stopping criterion
+            if (np.linalg.norm(fx.grad(xk) >  EPSILON)): # Optimality condition
+                status = True
+                break
+
+            sigma = sgradient_direction(xk_1, xk, fx)
+            d = -(1/sigma) * fx.grad(fx)
+            alpha =  armijo2(fx, d, xk, beta, eta)
+            xk = xk+alpha* d
+            k +=1
 
     elif step == 'mod_armijo':
+        sigmas = [] 
+
+        while (k < MAX_ITER): # stopping criterion
+            if (np.linalg.norm(fx.grad(xk) >  EPSILON)): # Optimality condition
+                status = True
+                break
+
+            sigma = sgradient_direction(xk_1, xk, fx)
+
+            if len(sigmas) >= 10:
+                sigmas.pop(0)
+            sigmas.append(sigma)
+            sigma = max(sigmas)
+
+            d = -(1/sigma) * fx.grad(fx)
+            xk = xk+alpha* d
+            k +=1
 
     else:
+        while (k < MAX_ITER): # stopping criterion
+            if (np.linalg.norm(fx.grad(xk) >  EPSILON)): # Optimality condition
+                status = True
+                break
+            
+            sigma = sgradient_direction(xk_1, xk, fx)
+            d = -(1/sigma) * fx.grad(fx)
+            xk = xk+alpha* d
+            k +=1
 
-    return xk
+    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k-1}
 
