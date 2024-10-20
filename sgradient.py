@@ -41,6 +41,19 @@ def armijo2(fx, d, xk, beta, eta):
         term *= beta 
     return alpha 
 
+def armijo_mod(fx, d, xk, beta, eta, values):
+    alpha = 1
+    # beta, eta = params.BETA_BFGS , params.ETA_BFGS 
+
+    term = eta *alpha * (fx.grad(xk)).T # VERIFICAR SE É .T mesmo
+    max_fx  = max(values)
+
+    while (fx.obj(xk+alpha *d) >= max_fx +term ): # finds the smallest 
+        alpha *= beta # 
+        term *= beta 
+    return alpha 
+
+
 def steepest_descent(x0,fx):
     # x0 is our initial point
     # fx is an pycutest object that contains the objective function fx.obj() as a pyhton method
@@ -103,7 +116,9 @@ def sgradient_direction(xk_1, xk, fx):
     y = fx.grad(xk) - fx.grad(xk_1)
 
     sigma = (s.T @ y)/ (s.T @ s)
-    return sigma
+    d = -(1/sigma) * fx.grad(fx)
+
+    return d
 
 def spectral_gradient(x0, x1, fx,  step = None):
     MAX_ITER = params.MAX_ITERATIONS
@@ -123,27 +138,27 @@ def spectral_gradient(x0, x1, fx,  step = None):
                 break
 
             sigma = sgradient_direction(xk_1, xk, fx)
-            d = -(1/sigma) * fx.grad(fx)
+            
             alpha =  armijo2(fx, d, xk, beta, eta)
             xk = xk+alpha* d
             k +=1
 
-    elif step == 'mod_armijo':
-        sigmas = [] 
+    elif step == 'armijo_mod':
+        values = [] 
+        beta, eta  = params.BETA_SG, params.ETA_SG
 
         while (k < MAX_ITER): # stopping criterion
             if (np.linalg.norm(fx.grad(xk) >  EPSILON)): # Optimality condition
                 status = True
                 break
+            
+            if len(values) >= 10:
+                values.pop(0)
+            values.append(fx.obj(xk))
 
-            sigma = sgradient_direction(xk_1, xk, fx)
+            d = sgradient_direction(xk_1, xk, fx)
 
-            if len(sigmas) >= 10:
-                sigmas.pop(0)
-            sigmas.append(sigma)
-            sigma = max(sigmas)
-
-            d = -(1/sigma) * fx.grad(fx)
+            alpha = armijo_mod(fx, d, xk, beta, eta,values)
             xk = xk+alpha* d
             k +=1
 
