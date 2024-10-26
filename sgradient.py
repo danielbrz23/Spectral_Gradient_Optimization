@@ -25,7 +25,7 @@ import params
 def armijo(fx, d, xk, beta, eta, values= None):
     alpha = 1
     if values == None:
-        values = fx.obj(xk)
+        values = [fx.obj(xk)]
 
     term = eta *alpha * (fx.grad(xk)).T @ d
     max_fx  = float(max(values))
