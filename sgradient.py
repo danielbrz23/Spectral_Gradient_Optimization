@@ -2,154 +2,187 @@
 import numpy as np
 import pycutest as pqt
 import matplotlib.pyplot as plt
-
 import params 
 
-#################################
-'''
-        TO-DOS:
-        - STUDY PYCUTEST
-        - CALCULATE GRADIENT OF F (GRADF)
-        - CALCULATE F(X) (FX)
-        - STOP CRITERIA: NUMBER OF ITERATIONS
-        - SEARCH IMPLEMENTATIONS FOR COMPARISON
-
-
-
-'''
-
-
-
-#################################
-
-def armijo(fx, d, xk, beta, eta, values= None):
+def armijo(fx, d, xk, evalf, evalgf, values= None, MAX_ITER =  params.MAX_ITER_ARMIJO):
+    eta = params.ETA
+    beta = params.BETA
     alpha = 1
     if values == None:
         values = [fx.obj(xk)]
+        evalf +=1
 
     term = eta *alpha * (fx.grad(xk)).T @ d
-    max_fx  = float(max(values))
+    evalgf+=1
 
-    while (fx.obj(xk+alpha *d) >= max_fx +term ): # finds the smallest 
+    max_fx  = float(max(values))
+    i=0
+    while (fx.obj(xk+alpha *d) >= max_fx +term and i<=MAX_ITER): # finds the smallest 
+        evalf +=1
         alpha *= beta # 
         term *= beta 
-    return alpha 
+        i+=1
+    if i>MAX_ITER:
+        return False
+    return alpha, evalf, evalgf
 
 
-def gradient_descent(x0,fx, eta = params.ETA_GD, beta = params.BETA_GD, MAX_ITER = params.MAX_ITERATIONS, EPSILON = params.EPSILON):
+def gradient_descent(x0,fx, MAX_ITER = params.MAX_ITER_GD, EPSILON = params.EPSILON):
     # x0 is our initial point
     # fx is an pycutest object that contains the objective function fx.obj() as a pyhton method
     xk = x0
     k = 0
-
-
     status = False
 
+    evalf = 0
+    evalgf = 0
+
     while (k < MAX_ITER): # stopping criterion
-        if (np.linalg.norm(fx.grad(xk) < EPSILON)): # Optimality condition
+        gradf = fx.grad(xk)
+        evalgf +=1
+        if (np.linalg.norm(gradf, ord=np.inf) < EPSILON): # Optimality condition
             status = True
             break
-        d = -fx.grad(xk) # steepest descent direction
+        d = -gradf # steepest descent direction
 
-        alpha =  armijo(fx, d, xk, beta, eta)
+        armijo = armijo(fx, d, xk, evalf, evalgf)
+        if armijo == False:
+            return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+        else:
+            alpha, evalf, evalgf =  armijo
+
         xk = xk+alpha* d
         k +=1
-    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k}
+    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
 
-def bfgs_hessian(Hk_1, fx, xk_1, alpha, d):
-    xk = xk_1 +alpha * d
-    s = xk - xk_1
-    y = fx.grad(xk) - fx.grad(xk_1)
+def bfgs_hessian(Hk_1, gradfk, gradfk_1, xk_1, alpha, d):
+    s = alpha * d # ( xk - xk_1 )
+    y = gradfk - gradfk_1
 
     I = np.eye(Hk_1.shape[0])
     rho = 1/(y.T @ s)
     z = np.dot(s, y.T)
-    Hk = (I - rho * z) @ Hk_1 (I - rho * z.T) + rho * np.dot(s, s.T)
+    Hk = (I - rho * z) @ Hk_1 @(I - rho * z.T) + rho * np.dot(s, s.T)
 
     return Hk
 
 
-def BFGS(x0, fx, eta = params.ETA_BFGS, beta = params.BETA_BFGS, MAX_ITER = params.MAX_ITERATIONS, EPSILON = params.EPSILON):
+def BFGS(xk, fx, MAX_ITER = params.MAX_ITERATIONS, EPSILON = params.EPSILON):
     k = 0
-    Hk =  np.eye(len(x0))  # Initial aproximation to the hessian of fx
-    xk = x0
+    Hk =  np.eye(len(xk))  # Initial aproximation to the hessian of fx
 
-    beta, eta =  params.BETA_BFGS, params.ETA_BFGS
-    MAX_ITER = params.MAX_ITERATIONS
-    EPSILON = params.EPSILON
     status = False
+    evalf, evalgf = 0,0
+
+    gradfk = fx.grad(xk)
+    evalgf +=1
 
     while (k < MAX_ITER): # stopping criterion
-        if (np.linalg.norm(fx.grad(xk) < EPSILON)): # Optimality condition
+        if (np.linalg.norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
             status = True
             break
         d = np.dot(Hk, -fx.grad(xk))
 
-        alpha = armijo(fx, d, xk, beta, eta)
-        Hk = bfgs_hessian(Hk, fx, xk, alpha, d)
+        armijo = armijo(fx, d, xk, evalf, evalgf)
+        if armijo == False:
+            return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+        else:
+            alpha, evalf, evalgf =  armijo
+        
         xk = xk + alpha * d
+        gradfk_1 = gradfk
+        gradfk =  fx.grad(xk)
+        evalgf+=1
 
+        Hk = bfgs_hessian(Hk, gradfk, gradfk_1,  xk, alpha, d)
+        
         k+=1
 
     return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k}
 
-def sgradient_direction(xk_1, xk, fx):
+def sgradient_direction(xk_1, xk,  gradfk, gradfk_1):
     s = xk - xk_1
-    y = fx.grad(xk) - fx.grad(xk_1)
+    y = gradfk - gradfk_1
 
-    sigma = (s.T @ y)/ (s.T @ s)
-    d = -(1/sigma) * fx.grad(fx)
+    if (s @ s) > 0:
+        sigma = (s @ y)/ (s @ s)
+    else:
+        sigma =1e-4 * gradfk/max(1.0, np.linalg.norm(xk))
+
+    sigma = max(1e-30, min(sigma, 1e30))
+
+    d = -(1/sigma) * gradfk
 
     return d
 
-def spectral_gradient(x0, x1, fx,  step = None, eta = params.ETA_SG, beta = params.BETA_SG, MAX_ITER = params.MAX_ITERATIONS, EPSILON = params.EPSILON):
 
+def spectral_gradient(xk_1, xk, fx,  step = 'simple') :
     k=1
-    xk_1 = x0
-    xk = x1
-    alpha = 1
+    MAX_ITER = params.MAX_ITER_SG
+    evalf, evalgf = 0,0
 
-    if step == 'armijo':
-      
+    gradfk_1 = fx.grad(xk_1)
+    evalgf +=1
 
-        while (k < MAX_ITER): # stopping criterion
-            if (np.linalg.norm(fx.grad(xk)) < EPSILON): # Optimality condition
-                status = True
-                break
+    EPSILON = 1e-4
+    status = False
+    match step:
+        case 'armijo':
+            while (k < MAX_ITER): # stopping criterion
+                gradfk = fx.grad(xk)
+                evalgf +=1
+                if (np.linalg.norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
+                    status = True
+                    break
+                d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
+                
+                armijo = armijo(fx, d, xk, evalf, evalgf)
+                if armijo == False:
+                    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+                else:
+                    alpha, evalf, evalgf =  armijo
 
-            sigma = sgradient_direction(xk_1, xk, fx)
-            
-            alpha =  armijo(fx, d, xk, beta, eta)
-            xk = xk+alpha* d
-            k +=1
+                xk = xk+alpha* d
+                k +=1
+                gradfk_1 = gradfk
 
-    elif step == 'armijo_mod':
-        values = [] 
+        case 'armijo_mod':
+            values = [] 
 
-        while (k < MAX_ITER): # stopping criterion
-            if (np.linalg.norm(fx.grad(xk)) < EPSILON): # Optimality condition
-                status = True
-                break
-            
-            if len(values) >= 10:
-                values.pop(0)
-            values.append(fx.obj(xk))
+            while (k < MAX_ITER): # stopping criterion
+                gradfk = fx.grad(xk)
+                evalgf +=1
+                if (np.linalg.norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
+                    status = True
+                    break
+                d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
+                
+                if len(values) >= 10:
+                    values.pop(0)
+                values.append(fx.obj(xk))
 
-            d = sgradient_direction(xk_1, xk, fx)
+                d = sgradient_direction(xk_1, xk, fx)
 
-            alpha = armijo(fx, d, xk, beta, eta,values)
-            xk = xk+alpha* d
-            k +=1
+                armijo = armijo(fx, d, xk, evalf, evalgf, values = values)
+                if armijo == False:
+                    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+                else:
+                    alpha, evalf, evalgf =  armijo
 
-    else:
-        while (k < MAX_ITER): # stopping criterion
-            if (np.linalg.norm(fx.grad(xk)) < EPSILON): # Optimality condition
-                status = True
-                break
-            
-            d= sgradient_direction(xk_1, xk, fx)
-            xk = xk+alpha* d
-            k +=1
+                xk = xk+alpha* d
+                k +=1
+                gradfk_1 = gradfk
 
-    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k-1}
+        case 'simple':
+            while (k < MAX_ITER): # stopping criterion
+                gradfk = fx.grad(xk)
+                evalgf +=1
+                if (np.linalg.norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
+                    status = True
+                    break
+                d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
 
+                xk = xk+ d
+                k +=1
+                gradfk_1 = gradfk
+    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k-1, 'evalf': evalf, 'evalgf': evalgf}
