@@ -1,26 +1,26 @@
 import numpy as np
 import params 
+import math
 
-def armijo(fx, d, xk, evalf, evalgf, values= None, MAX_ITER =  params.MAX_ITER_ARMIJO):
+def armijo(fx:object, d, xk, evalf, evalgf, values, MAX_ITER =  params.MAX_ITER_ARMIJO):
     eta = params.ETA
     beta = params.BETA
     alpha = 1
-    if values == None:
-        values = [fx.obj(xk)]
-        evalf +=1
+
 
     term = eta * np.dot((fx.grad(xk)), d)
     evalgf+=1
 
-    max_fx  = float(max(values))
+    max_fx  = max(values)
     i=0
-    while (fx.obj(xk+alpha *d) >= max_fx + alpha * term and i<=MAX_ITER): 
+    while (i<=MAX_ITER): 
+        if fx.obj(xk+alpha*d) <= ( max_fx + alpha * term ):
+            return alpha, evalf+i, evalgf
         alpha *= beta 
         i+=1
-    evalf +=i
-    if i>MAX_ITER:
-        return False
-    return alpha, evalf, evalgf
+        
+    return False
+    
 
 
 def gradient_descent(x0,fx, MAX_ITER = params.MAX_ITER_GD, EPSILON = params.EPSILON):
@@ -41,7 +41,8 @@ def gradient_descent(x0,fx, MAX_ITER = params.MAX_ITER_GD, EPSILON = params.EPSI
             return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
         d = -gradf # steepest descent direction
 
-        arm = armijo(fx, d, xk, evalf, evalgf)
+        arm= armijo(fx, d, xk, evalf, evalgf, values = [fx.obj(xk)])
+        evalf+=1
         if arm == False:
             return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
         else:
@@ -79,7 +80,8 @@ def BFGS(xk, fx, MAX_ITER = params.MAX_ITER_BFGS, EPSILON = params.EPSILON):
             return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
         d = np.dot(Hk, -fx.grad(xk))
 
-        arm= armijo(fx, d, xk, evalf, evalgf)
+        arm= armijo(fx, d, xk, evalf, evalgf, values = [fx.obj(xk)])
+        evalf+=1
         if arm == False:
             return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
         else:
@@ -99,10 +101,18 @@ def BFGS(xk, fx, MAX_ITER = params.MAX_ITER_BFGS, EPSILON = params.EPSILON):
 def sgradient_direction(xk_1, xk,  gradfk, gradfk_1):
     s = xk - xk_1
     y = gradfk - gradfk_1
-    if np.dot(s, y) > 0:
-        sigma = np.dot(s, y)/np.dot(s, s)
+    skyk = np.dot(s, y)
+    sksk = np.dot(s, s)
+
+    if  skyk> 0 and sksk != 0:
+        sigma = skyk/sksk
+        if sigma == np.nan:
+            norm = np.linalg.norm(xk, ord=np.inf)
+            sigma  = 1e-4 * np.linalg.norm(gradfk, ord=np.inf) / (max(1.0, norm ))
+
     else:
-        sigma =1e-4 *  np.linalg.norm(gradfk,ord = np.inf)/max(1.0, np.linalg.norm(xk, ord=np.inf))
+        norm = np.linalg.norm(xk, ord=np.inf)
+        sigma  = 1e-4 * np.linalg.norm(gradfk, ord=np.inf) / (max(1.0, norm ))
 
 
     sigma = max(1e-30, min(sigma, 1e30))
@@ -122,10 +132,13 @@ def spectral_gradient(xk_1, fx,  step = 'simple', EPSILON = params.EPSILON, MAX_
     status = False
 
     ## Finding x1
-    alpha = ( (EPSILON**(1/2))* max((EPSILON**(1/2)), np.linalg.norm(xk_1, ord = np.inf)) )/ (np.linalg.norm(gradfk_1, ord=np.inf))
+    delta = (2.22e-16)*(1/2)
+    norm =  np.linalg.norm(xk_1, ord = np.inf)
+    alpha = (delta * max(delta,norm) )/ (np.linalg.norm(gradfk_1, ord=np.inf))
     d = -alpha* gradfk_1
-    alpha, evalf, evalgf = armijo(fx, d, xk_1, evalf, evalgf)
-    xk = alpha * d
+    alpha, evalf, evalgf = armijo(fx, d, xk_1, evalf, evalgf, values = [fx.obj(xk_1)])
+    evalf+=1
+    xk = xk_1 + alpha * d
     
 
     match step:
@@ -138,12 +151,14 @@ def spectral_gradient(xk_1, fx,  step = 'simple', EPSILON = params.EPSILON, MAX_
                     return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
                 d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
                 
-                arm = armijo(fx, d, xk, evalf, evalgf)
+                arm= armijo(fx, d, xk, evalf, evalgf, values = [fx.obj(xk)])
+                evalf+=1
                 if arm == False:
                     return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
                 else:
                     alpha, evalf, evalgf =  arm
 
+                xk_1 = xk
                 xk = xk+alpha* d
                 k +=1
                 gradfk_1 = gradfk
@@ -157,11 +172,13 @@ def spectral_gradient(xk_1, fx,  step = 'simple', EPSILON = params.EPSILON, MAX_
                 if (np.linalg.norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
                     status = True
                     return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
-                d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
                 
+                d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
+
                 if len(values) >= 10:
                     values.pop(0)
                 values.append(fx.obj(xk))
+                evalf+=1
 
                 arm=  armijo(fx, d, xk, evalf, evalgf, values = values)
                 if arm == False:
@@ -169,6 +186,8 @@ def spectral_gradient(xk_1, fx,  step = 'simple', EPSILON = params.EPSILON, MAX_
                 else:
                     alpha, evalf, evalgf =  arm
 
+
+                xk_1 = xk
                 xk = xk+alpha* d
                 k +=1
                 gradfk_1 = gradfk
@@ -182,7 +201,10 @@ def spectral_gradient(xk_1, fx,  step = 'simple', EPSILON = params.EPSILON, MAX_
                     return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k-1, 'evalf': evalf, 'evalgf': evalgf}
                 d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
 
-                xk = xk+ d
+                xk_1 = xk
+                xk = xk + d
+                if math.isnan(fx.obj(xk)):
+                    print(fx.obj(xk), xk_1, xk, gradfk, gradfk_1, d)
                 k +=1
                 gradfk_1 = gradfk
     return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k-1, 'evalf': -evalf, 'evalgf': -evalgf}
