@@ -1,56 +1,59 @@
 import numpy as np
+from numpy.linalg import norm
 import params 
-import math
+from math import isnan
 
-def armijo(fx:object, d, xk, evalf, evalgf, values, MAX_ITER =  params.MAX_ITER_ARMIJO):
-    eta = params.ETA
-    beta = params.BETA
+def armijo(fx, d, xk, gradfk, evalf, values,  eta = params.ETA,  beta = params.BETA, MAX_ITER =  params.MAX_ITER_ARMIJO):
     alpha = 1
-
-
-    term = eta * np.dot((fx.grad(xk)), d)
-    evalgf+=1
+    term = eta * np.dot(gradfk, d)
 
     max_fx  = max(values)
     i=0
     while (i<=MAX_ITER): 
-        if fx.obj(xk+alpha*d) <= ( max_fx + alpha * term ):
-            return alpha, evalf+i, evalgf
+        if fx.obj(xk+alpha*d) < ( max_fx + alpha * term ):
+            return alpha, evalf+1
+        evalf+=1
         alpha *= beta 
         i+=1
-        
     return False
     
-
-
 def gradient_descent(x0,fx, MAX_ITER = params.MAX_ITER_GD, EPSILON = params.EPSILON):
-    # x0 is our initial point
-    # fx is an pycutest object that contains the objective function fx.obj() as a pyhton method
+    """
+    Gradient descent with Armijo Line Search
+    
+    Parameters:
+    - fx: an pycutest object with methods `obj(x)` (function evaluation) and `grad(x)` (gradient evaluation)
+    - xk: initial point
+    - max_iter: maximum number of iterations
+    - EPSILON: tolerance for stopping criterion
+
+    Returns:
+    - A dictionary with the final point, function value, iteration count and evaluations count.
+    """
+
     xk = x0
     k = 0
-    status = False
 
-    evalf = 0
-    evalgf = 0
+    evalf,evalgf = 0, 0
 
     while (k < MAX_ITER): # stopping criterion
         gradf = fx.grad(xk)
         evalgf +=1
-        if (np.linalg.norm(gradf, ord=np.inf) < EPSILON): # Optimality condition
-            status = True
-            return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
+        if (norm(gradf, ord=np.inf) < EPSILON): # Optimality condition
+            return  { 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
         d = -gradf # steepest descent direction
+        d = d/np.max(np.abs(d)) if k == 0 else d* 0.1
 
-        arm= armijo(fx, d, xk, evalf, evalgf, values = [fx.obj(xk)])
+        arm= armijo(fx, d, xk, gradf, evalf, values = [fx.obj(xk)])
         evalf+=1
         if arm == False:
-            return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+            return { 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
         else:
-            alpha, evalf, evalgf =  arm
+            alpha, evalf=  arm
 
         xk = xk+alpha* d
         k +=1
-    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf':- evalf, 'evalgf': -evalgf}
+    return { 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf':- evalf, 'evalgf': -evalgf}
 
 def bfgs_hessian(Hk_1, gradfk, gradfk_1, alpha, d):
     s = alpha * d # ( xk - xk_1 )
@@ -65,27 +68,35 @@ def bfgs_hessian(Hk_1, gradfk, gradfk_1, alpha, d):
 
 
 def BFGS(xk, fx, MAX_ITER = params.MAX_ITER_BFGS, EPSILON = params.EPSILON):
+    """
+    Quasi-Newton BFGS with Armijo Line Search
+    
+    Parameters:
+    - fx: an pycutest object with methods `obj(x)` (function evaluation) and `grad(x)` (gradient evaluation)
+    - xk: initial point
+    - max_iter: maximum number of iterations
+    - EPSILON: tolerance for stopping criterion
+
+    Returns:
+    - A dictionary with the final point, function value, iteration count and evaluations count.
+    """
     k = 0
     Hk =  np.eye(len(xk))  # Initial aproximation to the hessian of fx
-
-    status = False
     evalf, evalgf = 0,0
-
     gradfk = fx.grad(xk)
     evalgf +=1
 
     while (k < MAX_ITER): # stopping criterion
-        if (np.linalg.norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
-            status = True
-            return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
-        d = np.dot(Hk, -fx.grad(xk))
+        if (norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
+            return  { 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
+        d = np.dot(Hk, -gradfk)
 
-        arm= armijo(fx, d, xk, evalf, evalgf, values = [fx.obj(xk)])
+        arm= armijo(fx, d, xk, gradfk, evalf, values = [fx.obj(xk)])
         evalf+=1
         if arm == False:
-            return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+            return {  'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
         else:
-            alpha, evalf, evalgf =  arm
+            alpha, evalf=  arm
         
         xk = xk + alpha * d
         gradfk_1 = gradfk
@@ -96,7 +107,7 @@ def BFGS(xk, fx, MAX_ITER = params.MAX_ITER_BFGS, EPSILON = params.EPSILON):
         
         k+=1
 
-    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+    return {  'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
 
 def sgradient_direction(xk_1, xk,  gradfk, gradfk_1):
     s = xk - xk_1
@@ -104,107 +115,82 @@ def sgradient_direction(xk_1, xk,  gradfk, gradfk_1):
     skyk = np.dot(s, y)
     sksk = np.dot(s, s)
 
-    if  skyk> 0 and sksk != 0:
+    if  skyk> 0 and sksk!= 0:
         sigma = skyk/sksk
-        if sigma == np.nan:
-            norm = np.linalg.norm(xk, ord=np.inf)
-            sigma  = 1e-4 * np.linalg.norm(gradfk, ord=np.inf) / (max(1.0, norm ))
 
     else:
-        norm = np.linalg.norm(xk, ord=np.inf)
-        sigma  = 1e-4 * np.linalg.norm(gradfk, ord=np.inf) / (max(1.0, norm ))
+        n_xk = (np.max(np.abs(xk)))
+        sigma  = (1.0e-4 * (np.max(np.abs(gradfk_1))))/ (max(1.0, n_xk ))
 
-
-    sigma = max(1e-30, min(sigma, 1e30))
-
-    d = -(1/sigma) *gradfk
-
+    sigma = max(1.0e-30, min(sigma, 1.0e30))
+    d = -(1/sigma) * gradfk
     return d
 
 
 def spectral_gradient(xk_1, fx,  step = 'simple', EPSILON = params.EPSILON, MAX_ITER = params.MAX_ITER_SG) :
+    """
+    Spectral Gradient Descent with Armijo Line Search
+    
+    Parameters:
+    - fx: an pycutest object with methods `obj(x)` (function evaluation) and `grad(x)` (gradient evaluation)
+    - xk_1: initial point
+    - step: a parameter that determines the type of search
+    - max_iter: maximum number of iterations
+    - EPSILON: tolerance for stopping criterion
+
+    Returns:
+    - A dictionary with the final point, function value, iteration count and evaluations count.
+    """
     k=1
     evalf, evalgf = 0,0
-
     gradfk_1 = fx.grad(xk_1)
     evalgf +=1
 
-    status = False
-
     ## Finding x1
-    delta = (2.22e-16)*(1/2)
-    norm =  np.linalg.norm(xk_1, ord = np.inf)
-    alpha = (delta * max(delta,norm) )/ (np.linalg.norm(gradfk_1, ord=np.inf))
-    d = -alpha* gradfk_1
-    alpha, evalf, evalgf = armijo(fx, d, xk_1, evalf, evalgf, values = [fx.obj(xk_1)])
-    evalf+=1
-    xk = xk_1 + alpha * d
-    
+    n_g = np.max(np.abs(gradfk_1))
+    n_x = np.max(np.abs(xk_1))
+    eps = 2.22e-16  # machine epsilon
+    a = (np.sqrt(eps) * max(np.sqrt(eps), n_x))/n_g
+    xk = xk_1 - a*gradfk_1 
+    values = [fx.obj(xk_1)] 
 
-    match step:
-        case 'armijo':
-            while (k < MAX_ITER): # stopping criterion
-                gradfk = fx.grad(xk)
-                evalgf +=1
-                if (np.linalg.norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
-                    status = True
-                    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
-                d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
-                
-                arm= armijo(fx, d, xk, evalf, evalgf, values = [fx.obj(xk)])
-                evalf+=1
+    while (k < MAX_ITER): 
+        gradfk = fx.grad(xk)
+        evalgf +=1
+        if (np.max(np.abs(gradfk)) < EPSILON): 
+            return  { 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
+        
+        d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)       
+        fxk = fx.obj(xk)
+        if isnan(fxk):
+            return {  'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+        evalf+=1
+
+        match step:
+            case 'simple':
+                alpha =1 
+            case 'armijo':
+                arm=  armijo(fx, d, xk, gradfk, evalf, values = [fxk])
                 if arm == False:
-                    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+                    return {  'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
                 else:
-                    alpha, evalf, evalgf =  arm
+                    alpha, evalf=  arm
 
-                xk_1 = xk
-                xk = xk+alpha* d
-                k +=1
-                gradfk_1 = gradfk
-
-        case 'armijo_mod':
-            values = [] 
-
-            while (k < MAX_ITER): # stopping criterion
-                gradfk = fx.grad(xk)
-                evalgf +=1
-                if (np.linalg.norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
-                    status = True
-                    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': evalf, 'evalgf': evalgf}
-                
-                d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
-
+            case 'armijo_mod':
                 if len(values) >= 10:
                     values.pop(0)
-                values.append(fx.obj(xk))
-                evalf+=1
-
-                arm=  armijo(fx, d, xk, evalf, evalgf, values = values)
+                values.append(fxk)
+                     
+                arm=  armijo(fx, d, xk, gradfk, evalf, values = values)
                 if arm == False:
-                    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
+                    return {  'xk': xk, 'fx': fx.obj(xk), 'iter': k, 'evalf': -evalf, 'evalgf': -evalgf}
                 else:
-                    alpha, evalf, evalgf =  arm
-
-
-                xk_1 = xk
-                xk = xk+alpha* d
-                k +=1
-                gradfk_1 = gradfk
-
-        case 'simple':
-            while (k < MAX_ITER): # stopping criterion
-                gradfk = fx.grad(xk)
-                evalgf +=1
-                if (np.linalg.norm(gradfk, ord=np.inf) < EPSILON): # Optimality condition
-                    status = True
-                    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k-1, 'evalf': evalf, 'evalgf': evalgf}
-                d = sgradient_direction(xk_1, xk, gradfk, gradfk_1)
-
-                xk_1 = xk
-                xk = xk + d
-                if math.isnan(fx.obj(xk)):
-                    print(fx.obj(xk), xk_1, xk, gradfk, gradfk_1, d)
-                k +=1
-                gradfk_1 = gradfk
-    return {'status': status, 'xk': xk, 'fx': fx.obj(xk), 'iter': k-1, 'evalf': -evalf, 'evalgf': -evalgf}
+                    alpha, evalf=  arm
+            case _:
+                print('Error: Variable *step* only recieves one of the following options: ["simple", "armijo", "armijo_mod"]! ')
+                return
+        xk_1 = xk
+        xk = xk+alpha* d
+        gradfk_1 = gradfk
+        k +=1
+    return {  'xk': xk, 'fx': fx.obj(xk), 'iter': k-1, 'evalf': -evalf, 'evalgf': -evalgf}
